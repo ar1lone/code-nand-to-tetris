@@ -1,3 +1,62 @@
+using System;
+using System.Collections.Generic;
+
+namespace ShowPicture
+{
+    public static class ShowPictureTask
+    {
+        public static string[] GenerateShowPictureCode(bool[,] pixels)
+        {
+            int height = pixels.GetLength(0);
+            int width = pixels.GetLength(1);
+            const int ramBase = 0x4000;
+            const int wordsPerRow = 32;
+            var lines = new List<string>();
+
+            for (int y = 0; y < height && y < 256; y++)
+            {
+                for (int word = 0; word < wordsPerRow; word++)
+                {
+                    int x0 = word * 16;
+                    lines.Add("@0");
+                    lines.Add("D=A");
+
+                    for (int bit = 0; bit < 16; bit++)
+                    {
+                        int x = x0 + bit;
+                        if (x < width && pixels[y, x])
+                        {
+                            int pow = 1 << (15 - bit);
+                            if (pow <= 32767)
+                            {
+                                lines.Add("@" + pow);
+                                lines.Add("D=D+A");
+                            }
+                            else
+                            {
+                                lines.Add("@16384");
+                                lines.Add("D=D+A");
+                                lines.Add("@16384");
+                                lines.Add("D=D+A");
+                            }
+                        }
+                    }
+
+                    int addr = ramBase + y * wordsPerRow + word;
+                    lines.Add("@" + addr);
+                    lines.Add("M=D");
+                }
+            }
+
+            lines.Add("(END)");
+            lines.Add("@END");
+            lines.Add("0;JMP");
+            return lines.ToArray();
+        }
+    }
+}
+
+
 CHIP RAM16K {
     IN in[16], load, address[14];
     OUT out[16];
