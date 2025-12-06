@@ -1,5 +1,21 @@
 using System;
 using System.Collections.Generic;
+CHIP Memory20K {
+    IN in[16], load, address[15];
+    OUT out[16];
+
+    PARTS:
+    DMux(in=load, sel=address[14], a=loadRam, b=outThree);
+    DMux(in=outThree, sel=address[13], a=loadScreen, b=loadTwo);
+    DMux(in=loadTwo, sel=address[12], a=kbd, b=loadRam4k);
+    RAM16K(in=in, load=loadRam, address=address[0..13], out=outRam);
+    Screen(in=in, load=loadScreen, address=address[0..12], out=outScreen);
+    Keyboard(out=outkbd);
+    RAM4K(in=in, load=loadRam4k, address=address[0..11], out=outram4K);
+    Mux16(a=outkbd, b=outram4K, sel=address[12], out=outOne);
+    Mux16(a=outScreen, b=outOne, sel=address[13], out=outTwo);
+    Mux16(a=outRam, b=outTwo, sel=address[14], out=out);
+}
 
 namespace ShowPicture
 {
