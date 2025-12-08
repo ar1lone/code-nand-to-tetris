@@ -1,3 +1,26 @@
+using System.Text;
+namespace Assembler
+{
+    public class Parser
+    {
+        public string[] RemoveWhitespacesAndComments(string[] asmLines)
+        {
+            var answers = new List<string>();
+            foreach (string line in asmLines)
+            {
+                var stringBuilder = new StringBuilder();
+                var formate_line = line.Split("//");
+                for (var index = 0; index < formate_line[0].Length; index++)
+                    if (formate_line[0][index] != ' ')
+                        stringBuilder.Append(formate_line[0][index]);
+                if (!string.IsNullOrEmpty(stringBuilder.ToString()))
+                    answers.Add(stringBuilder.ToString());
+            }
+            return answers.ToArray();
+        }
+    }
+}
+
 using System;
 using System.Collections.Generic;
 CHIP Memory20K {
