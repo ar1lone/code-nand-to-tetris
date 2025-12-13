@@ -1,4 +1,197 @@
-using System.Text;
+using System;
+using System.Globalization;
+using Avalonia;
+using Avalonia.Input;
+using Avalonia.Media;
+
+namespace Manipulation;
+
+public static class VisualizerTask
+{
+    public static double X = 220;
+    public static double Y = -100;
+    public static double Alpha = 0.05;
+    public static double Wrist = 2 * Math.PI / 3;
+    public static double Elbow = 3 * Math.PI / 4;
+    public static double Shoulder = Math.PI / 2;
+    
+    public static Brush UnreachableAreaBrush = new SolidColorBrush(Color.FromArgb(255, 255, 230, 230));
+    public static Brush ReachableAreaBrush = new SolidColorBrush(Color.FromArgb(255, 230, 255, 230));
+    public static Pen ManipulatorPen = new Pen(Brushes.Black, 3);
+    public static Brush JointBrush = new SolidColorBrush(Colors.Gray);
+
+    public static void KeyDown(Visual visual, KeyEventArgs key)
+    {
+        const double deltaAngle = 0.05;
+        UpdateAngles(key.Key, deltaAngle);
+        UpdateWristAngle();
+        visual.InvalidateVisual();
+    }
+
+    public static void MouseMove(Visual visual, PointerEventArgs e)
+    {
+        UpdateCoordinates(visual, e);
+        UpdateManipulator();
+        visual.InvalidateVisual();
+    }
+
+    public static void MouseWheel(Visual visual, PointerWheelEventArgs e)
+    {
+        Alpha += e.Delta.Y * 0.05;
+        UpdateManipulator();
+        visual.InvalidateVisual();
+    }
+
+    public static void UpdateManipulator()
+    {
+        var angles = ManipulatorTask.MoveManipulatorTo(X, Y, Alpha);
+        if (angles != null && angles.Length >= 3)
+        {
+            Shoulder = angles[0];
+            Elbow = angles[1];
+            Wrist = angles[2];
+        }
+    }
+
+    public static void DrawManipulator(DrawingContext context, Point shoulderPos)
+    {
+        var joints = AnglesToCoordinatesTask.GetJointPositions(Shoulder, Elbow, Wrist);
+        
+        DrawReachableZone(context, shoulderPos, joints);
+        DrawInfoText(context);
+        DrawManipulatorLines(context, shoulderPos, joints);
+        DrawJoints(context, shoulderPos, joints);
+    }
+
+    private static void UpdateAngles(Key key, double deltaAngle)
+    {
+        switch (key)
+        {
+            case Key.Q:
+                Shoulder += deltaAngle;
+                break;
+            case Key.A:
+                Shoulder -= deltaAngle;
+                break;
+            case Key.W:
+                Elbow += deltaAngle;
+                break;
+            case Key.S:
+                Elbow -= deltaAngle;
+                break;
+        }
+    }
+
+    private static void UpdateWristAngle()
+    {
+        Wrist = -Alpha - Shoulder - Elbow;
+    }
+
+    private static void UpdateCoordinates(Visual visual, PointerEventArgs e)
+    {
+        var shoulderPosition = GetShoulderPos(visual);
+        var mousePosition = e.GetPosition(visual);
+        var logicalCoordinates = ConvertWindowToMath(mousePosition, shoulderPosition);
+
+        X = logicalCoordinates.X;
+        Y = logicalCoordinates.Y;
+    }
+
+    private static void DrawInfoText(DrawingContext context)
+    {
+        var infoText = CreateInfoText();
+        context.DrawText(infoText, new Point(10, 10));
+    }
+
+    private static FormattedText CreateInfoText()
+    {
+        return new FormattedText(
+            $"X={X:0}, Y={Y:0}, Alpha={Alpha:0.00}",
+            CultureInfo.InvariantCulture,
+            FlowDirection.LeftToRight,
+            Typeface.Default,
+            18,
+            Brushes.DarkRed
+        )
+        {
+            TextAlignment = TextAlignment.Center
+        };
+    }
+
+    private static void DrawManipulatorLines(DrawingContext context, Point shoulderPos, Point[] joints)
+    {
+        DrawArmSegments(context, shoulderPos, joints);
+        DrawShoulderToArmSegment(context, shoulderPos, joints);
+    }
+
+    private static void DrawArmSegments(DrawingContext context, Point shoulderPos, Point[] joints)
+    {
+        for (int i = 0; i < joints.Length - 1; i++)
+        {
+            var startPoint = ConvertMathToWindow(joints[i], shoulderPos);
+            var endPoint = ConvertMathToWindow(joints[i + 1], shoulderPos);
+            context.DrawLine(ManipulatorPen, startPoint, endPoint);
+        }
+    }
+
+    private static void DrawShoulderToArmSegment(DrawingContext context, Point shoulderPos, Point[] joints)
+    {
+        if (joints.Length > 0)
+        {
+            var shoulderToFirstJoint = ConvertMathToWindow(joints[0], shoulderPos);
+            context.DrawLine(ManipulatorPen, shoulderPos, shoulderToFirstJoint);
+        }
+    }
+
+    private static void DrawJoints(DrawingContext context, Point shoulderPos, Point[] joints)
+    {
+        foreach (var joint in joints)
+        {
+            var windowJointPosition = ConvertMathToWindow(joint, shoulderPos);
+            context.DrawEllipse(JointBrush, null, windowJointPosition, 5, 5);
+        }
+    }
+
+    private static void DrawReachableZone(DrawingContext context, Point shoulderPos, Point[] joints)
+    {
+        var rmin = Math.Abs(Manipulator.UpperArm - Manipulator.Forearm);
+        var rmax = Manipulator.UpperArm + Manipulator.Forearm;
+        var mathCenter = CalculateZoneCenter(joints);
+        var windowCenter = ConvertMathToWindow(mathCenter, shoulderPos);
+        
+        DrawZoneEllipse(context, ReachableAreaBrush, windowCenter, rmax);
+        DrawZoneEllipse(context, UnreachableAreaBrush, windowCenter, rmin);
+    }
+
+    private static Point CalculateZoneCenter(Point[] joints)
+    {
+        if (joints.Length >= 3)
+            return new Point(joints[2].X - joints[1].X, joints[2].Y - joints[1].Y);
+        return new Point(0, 0);
+    }
+
+    private static void DrawZoneEllipse(DrawingContext context, Brush brush, Point center, double radius)
+    {
+        context.DrawEllipse(brush, null, center, radius, radius);
+    }
+
+    public static Point GetShoulderPos(Visual visual)
+    {
+        if (visual is Avalonia.Controls.Control control)
+            return new Point(control.Bounds.Width / 2, control.Bounds.Height / 2);
+        return new Point(400, 300);
+    }
+
+    public static Point ConvertMathToWindow(Point mathPoint, Point shoulderPos)
+    {
+        return new Point(mathPoint.X + shoulderPos.X, shoulderPos.Y - mathPoint.Y);
+    }
+
+    public static Point ConvertWindowToMath(Point windowPoint, Point shoulderPos)
+    {
+        return new Point(windowPoint.X - shoulderPos.X, shoulderPos.Y - windowPoint.Y);
+    }
+}using System.Text;
 namespace Assembler
 {
     public class Parser
